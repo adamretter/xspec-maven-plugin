@@ -42,15 +42,27 @@ public class XSpecResultsHandler extends DefaultHandler2 {
     private int tests = 0;
     private int passed = 0;
     private int failed = 0;
+    private int pending = 0;
+    private final LogProvider logProvider;
+
+    public XSpecResultsHandler(LogProvider logProvider) {
+        super();
+        this.logProvider=logProvider;
+    }
+    
+    
 
     @Override
     public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
         super.startElement(uri, localName, qName, attributes);
         if(uri != null && uri.equals(XSPEC_NS) && localName.equals("test")) {
             tests++;
-            final String result = attributes.getValue("successful");
-            if(result != null && result.equals("true")) {
+            final String successful = attributes.getValue("successful");
+            final String sPending = attributes.getValue("pending");
+            if(successful != null && successful.equals("true")) {
                 passed++;
+            } else if(sPending!=null && sPending.length()>0) {
+                this.pending++;
             } else {
                 failed++;
             }
@@ -82,5 +94,9 @@ public class XSpecResultsHandler extends DefaultHandler2 {
      */
     public int getFailed() {
         return failed;
+    }
+
+    public int getPending() {
+	return pending;
     }
 }

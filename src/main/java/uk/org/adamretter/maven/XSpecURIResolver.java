@@ -32,8 +32,13 @@ import net.sf.saxon.trans.XPathException;
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.URIResolver;
+import org.apache.xml.resolver.CatalogManager;
+import org.apache.xml.resolver.tools.CatalogResolver;
 
 /**
  * If Saxon fails to find a resource by URI
@@ -42,19 +47,37 @@ import java.net.URI;
  * classpath and filesystem
  *
  * @author <a href="mailto:adam.retter@googlemail.com">Adam Retter</a>
+ * @author <a href="mailto:christophe.marchand@contactoffice.net">Christophe Marchand</a>
  */
 public class XSpecURIResolver extends StandardURIResolver {
 
     private final ResourceResolver resourceResolver;
     private final LogProvider logProvider;
+    private final URIResolver catalogResolver;
 
-    public XSpecURIResolver(final LogProvider logProvider, final ResourceResolver resourceResolver) {
+    public XSpecURIResolver(final LogProvider logProvider, final ResourceResolver resourceResolver, File catalogFile) {
         this.logProvider = logProvider;
         this.resourceResolver = resourceResolver;
+	if(resourceResolver==null) {
+		System.err.println("resourceResolver is null !!!");
+	}
+        URIResolver tmpCatalogResolver = null;
+        if(catalogFile!=null && catalogFile.exists()) {
+            CatalogManager cm = new CatalogManager();
+            CatalogResolver cr = new CatalogResolver(cm);
+            try {
+                cr.getCatalog().parseCatalog(catalogFile.toURI().toURL());
+                tmpCatalogResolver = cr;
+            } catch (IOException ex) {
+                getLogProvider().getLog().error(ex.getMessage(), ex);
+            }
+        }
+        catalogResolver = tmpCatalogResolver;
     }
 
     @Override
     public Source resolve(final String href, final String base) throws XPathException {
+	getLogProvider().getLog().debug(String.format("resolve(%s,%s)",href,base));
         final Source saxonSource = super.resolve(href, base);
         if(saxonSource != null && new File(saxonSource.getSystemId()).exists()) {
             getLogProvider().getLog().debug(String.format("Saxon Resolved URI href=%s ,base=%s to %s", href, base, saxonSource));
@@ -71,13 +94,27 @@ public class XSpecURIResolver extends StandardURIResolver {
                 xspecSource.setSystemId(path);
                 return xspecSource;
             } else {
-                getLogProvider().getLog().warn("Could not Resolve URI for XSpec!");
-                return null;
+                if(catalogResolver!=null) {
+                    getLogProvider().getLog().debug(String.format("Attempting catalog resolution for %s", path));
+                    try {
+                        Source ret = catalogResolver.resolve(href, base);
+			if(ret==null) {
+				getLogProvider().getLog().warn(String.format("Resolution failed for %s %s",href, base));
+			}
+			return ret;
+                    } catch(TransformerException ex) {
+                        getLogProvider().getLog().warn("Could not Resolve URI for XSpec!");
+                        return null;
+                    }
+                } else {
+                    getLogProvider().getLog().warn("Could not Resolve URI for XSpec!");
+                    return null;
+                }
             }
         }
     }
 
-    protected LogProvider getLogProvider() {
+    protected final LogProvider getLogProvider() {
         return logProvider;
     }
 }
